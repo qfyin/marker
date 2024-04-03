@@ -1,9 +1,8 @@
 #!/bin/bash
-set -e
 DEBIAN_FRONTEND=noninteractive
 
 # Install required packages
-apt-get install -y curl wget git make lsb-release gcc
+sudo apt-get install -y curl wget git make lsb-release gcc
 
 # 1. Install poetry
 curl -sSL https://install.python-poetry.org | python3 -
@@ -22,8 +21,8 @@ cd marker
 chmod +x ./scripts/install/tesseract_5_install.sh
 ./scripts/install/tesseract_5_install.sh
 chmod +x ./scripts/install/ghostscript_install.sh
-./scripts/install/ghostscript_install.sh
-cat scripts/install/apt-requirements.txt | xargs apt-get install -y
+sudo ./scripts/install/ghostscript_install.sh
+cat scripts/install/apt-requirements.txt | xargs sudo apt-get install -y
 
 # 5. Create local.env file
 # it's already in repo
@@ -38,3 +37,7 @@ poetry install
 # 8. Update pytorch
 poetry remove torch
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# for test
+# wget https://arxiv.org/pdf/2304.04487.pdf
+# python3 s
