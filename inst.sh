@@ -18,6 +18,10 @@ echo "PATH=$PATH"
 cd marker
 
 # 4. Install libraries
+
+# Add the missing public key
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 82F409933771AC78
+
 chmod +x ./scripts/install/tesseract_5_install.sh
 ./scripts/install/tesseract_5_install.sh
 chmod +x ./scripts/install/ghostscript_install.sh
@@ -25,19 +29,10 @@ sudo ./scripts/install/ghostscript_install.sh
 cat scripts/install/apt-requirements.txt | xargs sudo apt-get install -y
 
 # 5. Create local.env file
-# it's already in repo
+echo TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata > local.env
 
-# 6. Create conda environment
-# no need
-
-# 7. Install python requirements
-poetry lock
-poetry install
-
-# 8. Update pytorch
-poetry remove torch
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install -q --force-reinstall --no-cache-dir git+https://msrasia.visualstudio.com/DefaultCollection/EBP/_git/DataScale@qinsu/main#subdirectory=obsidian/
 
 # for test
-# wget https://arxiv.org/pdf/2304.04487.pdf
-# python3 s
+python3 convert_single.py sample.pdf sample.md
