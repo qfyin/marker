@@ -16,7 +16,6 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "PATH=$PATH"
 
 # 3. Clone code from Github
-git clone --branch pdf_converter --single-branch https://github.com/qfyin/marker.git
 cd marker
 
 # 4. Install libraries

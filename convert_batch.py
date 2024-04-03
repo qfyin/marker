@@ -239,7 +239,8 @@ if __name__ == '__main__':
         g_config = get_config("conf.yaml")
         commands = [
             gen_obsidian_init_command(g_config.branch),
-            "./inst.sh",
+            f"git clone --branch {g_config.marker_branch} --single-branch {g_config.marker_repo}",
+            "marker/inst.sh",
             'python3 convert_batch.py' # use your own script name
         ]
 
