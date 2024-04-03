@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import datetime
 import glob
 import json
@@ -6,6 +7,7 @@ import math
 import os
 import sys
 import tempfile
+import time
 import yaml
 
 from concurrent.futures import ProcessPoolExecutor
@@ -13,7 +15,7 @@ from multiprocessing import Manager, Queue
 from threading import Thread
 from time import sleep
 from typing import Dict, Optional
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, unquote
 
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential, AzureCliCredential
@@ -32,13 +34,24 @@ from obsidian.core.utils import gen_obsidian_init_command, gen_pip_command, gen_
 g_config = None
 g_sas_token = None
 
+configure_logging()
+logger.add("pdfmarker.log", rotation="10 MB", retention="10 days", level="INFO")
+
+@contextlib.contextmanager
+def timer(name):
+    t0 = time.monotonic()
+    try:
+        yield
+    finally:
+        t1 = time.monotonic()
+        logger.info(f'[Timer({name})] {t1 - t0:.3f} s')
+
 class QuickDict(dict):
     def __getattr__(self, key):
         return self[key]
 
     def __setattr__(self, key, value):
         self[key] = value
-
 
 def get_config(config_file) -> QuickDict:
     if os.path.exists(config_file):
@@ -70,7 +83,7 @@ def get_config_fromenv():
         "length": int(os.environ[ENV_LENGTH]),
     })
 
-def get_blob_sas(identity_id: str = None, keyvault_name: str = None, secret_name: str = None):
+def get_blob_sas(identity_id: str, keyvault_name: str, secret_name: str):
     KVUri = f"https://{keyvault_name}.vault.azure.net/"
 
     credential = DefaultAzureCredential(
@@ -79,19 +92,46 @@ def get_blob_sas(identity_id: str = None, keyvault_name: str = None, secret_name
     )
     client = SecretClient(vault_url=KVUri, credential=credential)
 
-
     return client.get_secret(secret_name)
 
-configure_logging()
+def monitor_queue(queue):
+    while True:
+        sleep(0.1)  # Check the queue every 100ms
+        message = queue.get()
+        if message is None:  # Check for sentinel value
+            break
+        print(message)
 
-def log_or_queue(queue, message, error=False):
-    if queue:
-        queue.put(str(message))
+def get_file_count(url):
+    with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmp_dir:
+        index_file = azcopy.copy(url, tmp_dir)
+        with open(index_file) as fin:
+            return sum(1 for _ in fin)
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+def pre_process(fname: str, out_folder: str):
+    # fname: A/B/[10.1002]sample.pdf
+    in_url = azcopy.join_path(g_config.src_url, fname) # https://abc.blob.core.windows.net/xxx/A/B/[10.1002]sample.pdf
+    return azcopy.copy(in_url, out_folder) # .../tmp2p_abcd/[10.1002]sample.pdf
+
+def post_process(full_text, out_filename, out_url):
+    basename = os.path.basename(out_filename)
+    if len(full_text.strip()) > 0:
+        with open(out_filename, "w+", encoding='utf-8') as f:
+            f.write(full_text)
+        
+        logger.info(f"Uploading {unquote(basename)}")
+        azcopy.upload(out_filename, out_url)
+
+        # ignore the metadata for now
+        # with open(out_meta_filename, "w+") as f:
+        #     f.write(json.dumps(out_metadata, indent=4))
     else:
-        if error:
-            logger.exception(message)
-        else:
-            logger.info(message)
+        logger.info(f"Empty file: {unquote(basename)}.  No valid convert result")
 
 def process_single_pdf(
     fname: str,
@@ -101,17 +141,18 @@ def process_single_pdf(
     queue = None
     ):
     
-    #fname: A/B/[10.1002]sample.pdf
-    #out_filename: A/B/[10.1002]sample.md
-
+    # fname: A/B/[10.1002]sample.pdf
     try:
-        in_url = azcopy.join_path(g_config.src_url, fname)
-        local_file = azcopy.copy(in_url, out_folder)
+        local_file = pre_process(fname, out_folder) # .../tmp2p_abcd/[10.1002]sample.pdf        
 
-        out_filename = local_file.rsplit(".", 1)[0] + ".md"
-        out_meta_filename = out_filename.rsplit(".", 1)[0] + "_meta.json"
+        local_file_noext = os.path.splitext(local_file)[0] # .../tmp2p_abcd/[10.1002]sample
+        out_filename = local_file_noext + ".md" # .../tmp2p_abcd/[10.1002]sample.md
+        # out_meta_filename = local_file_noext + "_meta.json" # .../tmp2p_abcd/[10.1002]sample_meta.json
 
-        log_or_queue(queue, f"Converting {fname} to {out_filename}")
+        out_relative_path = os.path.splitext(fname)[0] + ".md" # A/B/[10.1002]sample.md
+        out_url = azcopy.join_path(g_config.dst_url, out_relative_path) # https://abc.blob.core.windows.net/yyy/A/B/[10.1002]sample.md
+
+        logger.info(f"Converting {unquote(fname)}")
 
         # Skip trying to convert files that don't have a lot of embedded text
         # This can indicate that they were scanned, and not OCRed properly
@@ -122,42 +163,10 @@ def process_single_pdf(
                 return
 
         full_text, out_metadata = convert_single_pdf(local_file, models)
-
-        if len(full_text.strip()) > 0:
-            with open(out_filename, "w+", encoding='utf-8') as f:
-                f.write(full_text)
-            
-            out_relative_path = fname.rsplit(".", 1)[0] + ".md"
-            out_url = azcopy.join_path(g_config.dst_url, out_relative_path)
-            log_or_queue(queue, f"Uploading {out_relative_path}")
-            azcopy.upload(out_filename, out_url)
-
-            with open(out_meta_filename, "w+") as f:
-                f.write(json.dumps(out_metadata, indent=4))
-        else:
-            log_or_queue(queue, f"Empty file: {local_file}.  Could not convert.")
+        post_process(full_text, out_filename, out_url)
     except Exception as e:
-        log_or_queue(queue, f"Error converting {local_file}")
-        log_or_queue(queue, e, error=True)
-
-def monitor_queue(queue):
-    while True:
-        sleep(0.1)  # Check the queue every 100ms
-        message = queue.get()
-        if message is None:  # Check for sentinel value
-            break
-        logger.info(message)
-
-def get_file_count():
-    with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmp_dir:
-        index_file = azcopy.copy(g_config.index_url, tmp_dir)
-        with open(index_file) as fin:
-            return sum(1 for _ in fin)
-
-def chunks(lst, n):
-    """Yield successive n-sized chunks from lst."""
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
+        logger.info(f"Error converting {unquote(local_file)}")
+        logger.exception(e)
 
 def process_minibatch(
     minibatch: list,
@@ -165,53 +174,64 @@ def process_minibatch(
     min_length: Optional[int] = None,
     queue = None
     ):
-    log_or_queue(queue, f"Loading models...")
-    models = load_all_models()
-    for fname in minibatch:
-        process_single_pdf(fname, out_folder, models, min_length, queue)
+    with timer("load_models"):
+        models = load_all_models()
+    
+    logger.info(f"minibatch of {len(minibatch)} files")
+    
+    with timer("process_minibatch"):
+        for fname in minibatch:
+            with timer("process_single_pdf"):
+                process_single_pdf(fname, out_folder, models, min_length, queue)
 
 def run(offset, length, min_length, workers):
     with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmp_dir:
-        logger.info(f'Get file list from Azure storage...')
+        logger.info(f"run(offset={offset}, length={length}, min_length={min_length}, workers={workers})")
+        logger.info(f'Using temp dir: {tmp_dir}')
         
-        index_file = azcopy.copy(g_config.index_url, tmp_dir)
-        with open(index_file) as fin:
-            urls = [quote(url.strip()) for url in fin.readlines()][offset: offset + length]
+        logger.info(f'Get file list from Azure storage...')
+
+        with timer("get_index"):
+            index_file = azcopy.copy(g_config.index_url, tmp_dir)
+            with open(index_file) as fin:
+                urls = [quote(url.strip()) for url in fin.readlines()][offset: offset + length]
         
         logger.info(f'Processing {len(urls)} files')
 
         queue = None
         
-        file_batches = list(chunks(urls, length // 8))
-        for minibatch in file_batches:
-            process_minibatch(minibatch, tmp_dir, min_length=min_length, queue=queue)
+        #file_batches = list(chunks(urls, max(length // (workers * 2), 1)))
 
+        # do it in a single process sequentially
+        #for minibatch in file_batches:
+        #    process_minibatch(minibatch, tmp_dir, min_length=min_length, queue=queue)
+        process_minibatch(urls, tmp_dir, min_length=min_length, queue=queue)
+
+        # do it in parallel with multiple processes
         # with Manager() as manager:
         #     queue = manager.Queue()
         #     monitor_thread = Thread(target=monitor_queue, args=(queue, ))
         #     monitor_thread.start()
                 
-        #     azure_urls = [azcopy.join_path(src_url, url) for url in urls]
-        #     #parse_medium_article(url, tmp_dir, None)
-        #     with ProcessPoolExecutor(max_workers=8) as executor:
-        #         for url in azure_urls:
-        #             executor.submit(parse_medium_article, url, tmp_dir, queue)
+        #     with ProcessPoolExecutor(max_workers=workers) as executor:
+        #         for mini_batch in file_batches:
+        #             executor.submit(process_minibatch, mini_batch, tmp_dir, min_length, queue)
                 
         #         executor.shutdown(wait=True)
             
         #     queue.put(None)
         #     monitor_thread.join()
+    
+    logger.info(f'All files processed')
 
 
-DEBUG = True
+DEBUG = False
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Convert multiple pdfs to markdown.")
-    parser.add_argument("--workers", type=int, default=5, help="Number of worker processes to use")
-    parser.add_argument("--min_length", type=int, default=None, help="Minimum length of pdf to convert")
+    parser.add_argument("--workers", type=int, default=1, help="Number of worker processes to use")
+    parser.add_argument("--min_length", type=int, default=2000, help="Minimum length of pdf to convert")
     args = parser.parse_args()
-
-    logger.add("pdfmarker.log", rotation="10 MB", retention="10 days", level="INFO")
 
     if batch_utils.in_batch_cluster():
         g_config = get_config_fromenv()
@@ -219,6 +239,7 @@ if __name__ == '__main__':
         g_config = get_config("conf.yaml")
         commands = [
             gen_obsidian_init_command(g_config.branch),
+            gen_apt_command("make", "lsb-release", "gcc"),
             gen_pip_command(
                 "beautifulsoup4",
                 "azure-keyvault-secrets",
@@ -245,7 +266,7 @@ if __name__ == '__main__':
             run(g_config.offset, g_config.length, args.min_length, args.workers)
         else:
             # submit to cluster
-            tot_files = get_file_count()
+            tot_files = get_file_count(g_config.index_url)
             tasks = []
             current_date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             job_id = f'{g_config.job_id_prefix}{current_date}'
@@ -266,6 +287,10 @@ if __name__ == '__main__':
                     }
                 )
                 tasks.append(task)
+
+                # only submit one batch for debug
+                break
+
             batch_utils.submit_tasks(
                 g_config.batch_url,
                 g_config.pool_id,
