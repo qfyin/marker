@@ -8,11 +8,15 @@ apt-get install -y curl wget git make lsb-release gcc
 # 1. Install poetry
 curl -sSL https://install.python-poetry.org | python3 -
 
+echo "HOME=$HOME"
+pwd
+
 # 2. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration file.
 export PATH="$HOME/.local/bin:$PATH"
+echo "PATH=$PATH"
 
 # 3. Clone code from Github
-git clone https://github.com/qfyin/marker.git
+git clone --branch pdf_converter --single-branch https://github.com/qfyin/marker.git
 cd marker
 
 # 4. Install libraries
