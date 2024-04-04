@@ -30,7 +30,9 @@ echo TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata > local.env
 
 pip3 install -r requirements.txt
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-pip3 install -q --force-reinstall --no-cache-dir git+https://msrasia.visualstudio.com/DefaultCollection/EBP/_git/DataScale@qinsu/main#subdirectory=obsidian/
 
-# for test
+# do this in python script command
+# pip3 install -q --force-reinstall --no-cache-dir git+https://msrasia.visualstudio.com/DefaultCollection/EBP/_git/DataScale@qinsu/main#subdirectory=obsidian/
+
+# for verifing the installation
 #python3 convert_single.py sample.pdf sample.md

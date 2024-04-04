@@ -238,10 +238,10 @@ if __name__ == '__main__':
     else:
         g_config = get_config("conf.yaml")
         commands = [
-            gen_obsidian_init_command(g_config.branch),
             f"git clone --branch {g_config.marker_branch} --single-branch {g_config.marker_repo}",
             "marker/inst.sh",
-            'python3 convert_batch.py' # use your own script name
+            gen_obsidian_init_command(g_config.branch),
+            'python3 marker/convert_batch.py' # use your own script name
         ]
 
     sas_token = get_blob_sas(g_config.identity_id, g_config.keyvault_name, g_config.secret_name)
