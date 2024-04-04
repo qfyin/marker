@@ -4,9 +4,6 @@ DEBIAN_FRONTEND=noninteractive
 # Install required packages
 sudo apt-get install -y curl wget git make lsb-release gcc
 
-# 1. Install poetry
-curl -sSL https://install.python-poetry.org | python3 -
-
 echo "HOME=$HOME"
 pwd
 
@@ -31,8 +28,9 @@ cat scripts/install/apt-requirements.txt | xargs sudo apt-get install -y
 # 5. Create local.env file
 echo TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata > local.env
 
+pip3 install -r requirements.txt
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-pip install -q --force-reinstall --no-cache-dir git+https://msrasia.visualstudio.com/DefaultCollection/EBP/_git/DataScale@qinsu/main#subdirectory=obsidian/
+pip3 install -q --force-reinstall --no-cache-dir git+https://msrasia.visualstudio.com/DefaultCollection/EBP/_git/DataScale@qinsu/main#subdirectory=obsidian/
 
 # for test
-python3 convert_single.py sample.pdf sample.md
+#python3 convert_single.py sample.pdf sample.md
