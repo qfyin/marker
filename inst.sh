@@ -4,12 +4,8 @@ DEBIAN_FRONTEND=noninteractive
 # Install required packages
 sudo apt-get install -y curl wget git make lsb-release gcc
 
-echo "HOME=$HOME"
-pwd
-
 # 2. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration file.
 export PATH="$HOME/.local/bin:$PATH"
-echo "PATH=$PATH"
 
 # 3. Clone code from Github
 cd marker
@@ -30,9 +26,3 @@ echo TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata > local.env
 
 pip3 install -r requirements.txt
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# do this in python script command
-# pip3 install -q --force-reinstall --no-cache-dir git+https://msrasia.visualstudio.com/DefaultCollection/EBP/_git/DataScale@qinsu/main#subdirectory=obsidian/
-
-# for verifing the installation
-#python3 convert_single.py sample.pdf sample.md
