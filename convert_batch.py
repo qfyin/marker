@@ -160,6 +160,7 @@ def process_single_pdf(
         if min_length:
             length = get_length_of_text(local_file)
             if length < min_length:
+                logger.info(f"Skipping {unquote(local_file)}: length {length} < {min_length}")
                 return
 
         full_text, out_metadata = convert_single_pdf(local_file, models)
@@ -225,7 +226,7 @@ def run(offset, length, min_length, workers):
     logger.info(f'All files processed')
 
 
-DEBUG = False
+DEBUG = True
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Convert multiple pdfs to markdown.")
@@ -285,7 +286,7 @@ if __name__ == '__main__':
                 tasks.append(task)
 
                 # only submit one batch for debug
-                break
+                #break
 
             batch_utils.submit_tasks(
                 g_config.batch_url,
