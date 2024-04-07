@@ -225,13 +225,12 @@ def run(offset, length, min_length, workers):
     
     logger.info(f'All files processed')
 
-
-DEBUG = True
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Convert multiple pdfs to markdown.")
     parser.add_argument("--workers", type=int, default=1, help="Number of worker processes to use")
     parser.add_argument("--min_length", type=int, default=2000, help="Minimum length of pdf to convert")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")  # Add this line
+
     args = parser.parse_args()
 
     if batch_utils.in_batch_cluster():
@@ -257,7 +256,7 @@ if __name__ == '__main__':
     else:
         # run locally
  
-        if DEBUG:
+        if args.debug:
             # local debug
             logger.info('Running in debug mode')
             run(g_config.offset, g_config.length, args.min_length, args.workers)
